@@ -1,35 +1,71 @@
 import socket
+import threading
 
-# -------------------------------------------------
-# ACTIVIDAD 12: Servidor Avanzado
-# -------------------------------------------------
-def actividad12_servidor(host='127.0.0.1', port=8000):
-    print("\n--- ACTIVIDAD 12: SERVIDOR AVANZADO ---")
+# Configuración del servidor
+HOST = '0.0.0.0'
+PORT = 12345
 
-    servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    servidor.bind((host, port))
-    servidor.listen(1)
+# Lista de clientes conectados
+clients = []
+nicknames = []
 
-    print(f"Servidor avanzado iniciado en {host}:{port}")
-    print("Esperando conexión del cliente...")
+def broadcast(message, sender_client=None):
+    """Envía un mensaje a todos los clientes, excepto al remitente si se especifica."""
+    for client in clients:
+        if client != sender_client:
+            try:
+                client.send(message.encode('utf-8'))
+            except:
+                remove_client(client)
 
-    conn, addr = servidor.accept()
-    print(f"Cliente conectado desde: {addr}")
-
+def handle_client(client):
+    """Maneja la comunicación con un cliente."""
     while True:
-        # Recibir mensaje
-        recibido = conn.recv(1024).decode()
-
-        if not recibido or recibido.lower() == "salir":
-            print("El cliente se desconectó.")
+        try:
+            message = client.recv(1024).decode('utf-8')
+            if message:
+                print(f"Mensaje recibido: {message}")
+                broadcast(message, client)
+            else:
+                remove_client(client)
+                break
+        except:
+            remove_client(client)
             break
 
-        print(f"Cliente dice: {recibido}")
+def remove_client(client):
+    """Remueve un cliente desconectado."""
+    if client in clients:
+        index = clients.index(client)
+        clients.remove(client)
+        nickname = nicknames[index]
+        nicknames.remove(nickname)
+        client.close()
+        broadcast(f"{nickname} se ha desconectado.")
 
-        # Responder
-        respuesta = f"Servidor12: Mensaje recibido -> {recibido}"
-        conn.send(respuesta.encode())
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((HOST, PORT))
+    server.listen()
+    print(f"Servidor de chat iniciado en {HOST}:{PORT}")
 
-    conn.close()
-    servidor.close()
-    print("Servidor 12 finalizado.")
+    while True:
+        client, address = server.accept()
+        print(f"Conexión desde {address}")
+
+        # Solicitar nickname
+        client.send("NICK".encode('utf-8'))
+        nickname = client.recv(1024).decode('utf-8')
+        nicknames.append(nickname)
+        clients.append(client)
+
+        print(f"Nickname: {nickname}")
+        broadcast(f"{nickname} se ha unido al chat!")
+        client.send("Conectado al servidor!".encode('utf-8'))
+
+        # Iniciar hilo para el cliente
+        thread = threading.Thread(target=handle_client, args=(client,))
+        thread.start()
+
+if __name__ == "__main__":
+    main()

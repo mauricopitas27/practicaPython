@@ -1,28 +1,50 @@
 import socket
+import threading
 
-# -------------------------------------------------
-# ACTIVIDAD 13: Cliente Avanzado
-# -------------------------------------------------
-def actividad13_cliente(host='127.0.0.1', port=8000):
-    print("\n--- ACTIVIDAD 13: CLIENTE AVANZADO ---")
+class ChatClient:
+    def __init__(self, host='localhost', port=12345):
+        self.host = host
+        self.port = port
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connected = False
+        self.receive_thread = None
 
-    cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    cliente.connect((host, port))
+    def connect(self, nickname):
+        """Conecta al servidor y envía el nickname."""
+        try:
+            self.client.connect((self.host, self.port))
+            self.client.send(nickname.encode('utf-8'))
+            self.connected = True
+            # Iniciar hilo para recibir mensajes
+            self.receive_thread = threading.Thread(target=self.receive_messages)
+            self.receive_thread.start()
+            return True
+        except Exception as e:
+            print(f"Error al conectar: {e}")
+            return False
 
-    print("Conectado al Servidor (Actividad 12).")
-    print("Escribe 'salir' para terminar.\n")
+    def send_message(self, message):
+        """Envía un mensaje al servidor."""
+        if self.connected:
+            try:
+                self.client.send(message.encode('utf-8'))
+            except:
+                self.disconnect()
 
-    while True:
-        # Enviar mensaje
-        mensaje = input("Tú: ")
-        cliente.send(mensaje.encode())
+    def receive_messages(self):
+        """Recibe mensajes del servidor en un hilo."""
+        while self.connected:
+            try:
+                message = self.client.recv(1024).decode('utf-8')
+                if message:
+                    # Aquí se podría emitir una señal o callback para la interfaz
+                    print(f"Mensaje recibido: {message}")  # Para depuración; en la interfaz se maneja visualmente
+                else:
+                    self.disconnect()
+            except:
+                self.disconnect()
 
-        if mensaje.lower() == "salir":
-            break
-
-        # Recibir respuesta del servidor
-        respuesta = cliente.recv(1024).decode()
-        print(f"Servidor12: {respuesta}")
-
-    cliente.close()
-    print("Cliente 13 finalizado.")
+    def disconnect(self):
+        """Desconecta del servidor."""
+        self.connected = False
+        self.client.close()
