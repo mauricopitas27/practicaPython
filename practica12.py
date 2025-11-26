@@ -1,119 +1,129 @@
+# practica12.py
 import socket
 import threading
+import requests
 
-# Configuración del servidor
+# Config
 HOST = '0.0.0.0'
 PORT = 12345
+API_POST_URL = "http://127.0.0.1:8000/api/mensajes/crear"
 
-# Lista de clientes conectados
 clients = []
 nicknames = []
 
+def save_message_api(sender, message):
+    url = "http://127.0.0.1:8000/api/mensajes/crear"
+
+    # Laravel pide estos 3 campos
+    payload = {
+        "usuario": sender,
+        "mensaje": message,
+        "fecha_hora": "2025-01-01 12:00:00"  # puedes poner fecha automática abajo
+    }
+
+    try:
+        resp = requests.post(url, json=payload)
+
+        if resp.status_code == 201:
+            print("✔ Mensaje guardado en API")
+        else:
+            print(f"❌ API Error POST: No se pudo guardar. Estado: {resp.status_code} - {resp.text}")
+
+    except Exception as e:
+        print("❌ Error enviando a API:", e)
+
 def broadcast(message):
-    """Envía un mensaje a todos los clientes."""
-    for client in clients:
+    """Envía message (string) a todos los clientes conectados."""
+    for client in clients.copy():
         try:
-            # El servidor envía el mensaje a *todos*, incluyendo al remitente.
             client.send(message.encode('utf-8'))
-        except:
+        except Exception:
             remove_client(client)
 
 def handle_client(client):
-    """Maneja la comunicación con un cliente."""
-    # Obtener el nickname del cliente actual
+    """Recibe mensajes de un cliente y los retransmite; guarda en API."""
     try:
         index = clients.index(client)
         nickname = nicknames[index]
     except ValueError:
-        # Si el cliente no está en la lista (posiblemente desconectado), salir.
         return
 
     while True:
         try:
-            # Recibe el mensaje (solo el contenido, el nickname ya fue registrado por el servidor)
-            message = client.recv(1024).decode('utf-8') 
-            
-            if message:
-                # Formatea el mensaje con el nickname antes de reenviar a todos.
-                full_message = f"{nickname}: {message}"
-                
-                print(f"[{nickname}] dice: {message}")
-                broadcast(full_message) 
-            else:
-                # Cliente se desconectó limpiamente
+            message = client.recv(4096).decode('utf-8')
+            if not message:
+                # desconectó
                 remove_client(client)
                 break
-        except:
-            # Error de conexión
+
+            full_message = f"{nickname}: {message}"
+            print(f"[{nickname}] {message}")
+
+            # reenviar a todos
+            broadcast(full_message)
+
+            # guardar en API
+            save_message_api(nickname, message)
+
+        except Exception as e:
+            print("Error handle_client:", e)
             remove_client(client)
             break
 
 def remove_client(client):
-    """Remueve un cliente desconectado."""
+    """Remueve cliente desconectado y notifica."""
     if client in clients:
         try:
-            index = clients.index(client)
+            idx = clients.index(client)
+            nickname = nicknames[idx]
             clients.remove(client)
-            nickname = nicknames[index]
-            nicknames.remove(nickname)
+            nicknames.pop(idx)
             client.close()
-            # Envía un mensaje del sistema a todos
             broadcast(f"Sistema: {nickname} se ha desconectado.")
-        except ValueError:
-            # Ya fue removido o hubo un fallo en el índice
-            pass
+            print(f"{nickname} desconectado y removido.")
+        except Exception as e:
+            print("Error remove_client:", e)
 
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
-    # ******************************************************
-    # 🌟 SOLUCIÓN AL ERROR WinError 10048 (SO_REUSEADDR) 🌟
-    # ******************************************************
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
-    
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         server.bind((HOST, PORT))
         server.listen()
-        print(f"Servidor de chat iniciado en {HOST}:{PORT}")
+        print(f"Servidor chat escuchando en {HOST}:{PORT}")
     except OSError as e:
-        print(f"Error al iniciar el servidor: {e}")
-        print("El puerto puede estar ocupado. Espera un momento o reinicia la aplicación.")
+        print("Error al iniciar el servidor:", e)
         return
 
     while True:
         client, address = server.accept()
-        print(f"Conexión desde {address}")
+        print("Conexión entrante desde", address)
 
+        # esperamos que el cliente envíe el nickname inmediatamente
         try:
-            # Recibir nickname (el cliente lo envía en cuanto se conecta)
-            client.settimeout(5) # Opcional: Establecer un tiempo de espera
-            nickname = client.recv(1024).decode('utf-8')
-            client.settimeout(None) # Restablecer el timeout
-            
+            client.settimeout(5)
+            nickname = client.recv(1024).decode('utf-8').strip()
+            client.settimeout(None)
             if not nickname:
-                print(f"Conexión rechazada: No se recibió nickname de {address}")
+                print("No se recibió nickname, cerrando conexión.")
                 client.close()
                 continue
-            
-        except socket.timeout:
-            print(f"Tiempo de espera agotado al recibir nickname.")
-            client.close()
-            continue
-        except:
+        except Exception as e:
+            print("Error recibiendo nickname:", e)
             client.close()
             continue
 
-        nicknames.append(nickname)
         clients.append(client)
+        nicknames.append(nickname)
+        print(f"Nickname conectado: {nickname}")
 
-        print(f"Nickname: {nickname}")
-        
         # Notificar a todos
         broadcast(f"Sistema: {nickname} se ha unido al chat!")
         client.send("Sistema: Conectado al servidor!".encode('utf-8'))
 
-        # Iniciar hilo para el cliente
+        # arrancar hilo
         thread = threading.Thread(target=handle_client, args=(client,))
+        thread.daemon = True
         thread.start()
 
 if __name__ == "__main__":

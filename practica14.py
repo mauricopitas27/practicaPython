@@ -1,45 +1,50 @@
-# practica14.py (Código final, sin cambios)
+# practica14.py
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
-from practica13 import ChatClient 
+from practica13 import ChatClient
 
 class ChatGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chat Informaticos - Cliente")
-        self.root.geometry("500x600")
+        self.root.title("Chat Informáticos - Cliente")
+        self.root.geometry("520x640")
         self.root.configure(bg="#E0F7FA")
 
         self.client = ChatClient()
-        self.client.set_gui_callback(self.handle_server_message) 
+        self.client.set_gui_callback(self.handle_server_message)
 
-        # --- 1. Widgets Superiores (Nickname y Conectar) ---
+        # --- Nickname / Conectar ---
         self.nickname_label = tk.Label(root, text="Ingresa tu nombre :", bg="#E0F7FA", fg="#00796B", font=("Arial", 12, "bold"))
         self.nickname_label.pack(pady=10)
 
-        self.nickname_entry = tk.Entry(root, font=("Arial", 12), bg="#FFFFFF", fg="#000000")
+        self.nickname_entry = tk.Entry(root, font=("Arial", 12))
         self.nickname_entry.pack(pady=5)
 
         self.connect_button = tk.Button(root, text="Conectar", command=self.connect, bg="#4CAF50", fg="#FFFFFF", font=("Arial", 12, "bold"))
-        self.connect_button.pack(pady=10)
+        self.connect_button.pack(pady=8)
 
-        # --- 2. Área de Mensajes ---
+        # --- Area mensajes ---
         self.messages_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, state='disabled', bg="#F1F8E9", fg="#2E7D32", font=("Arial", 10))
         self.messages_area.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
 
-        # --- 3. Entrada de Mensaje ---
-        self.message_entry = tk.Entry(root, font=("Arial", 12), bg="#FFFFFF", fg="#000000")
+        # --- Entrada mensaje ---
+        self.message_entry = tk.Entry(root, font=("Arial", 12))
         self.message_entry.pack(pady=5, padx=10, fill=tk.X)
-        self.message_entry.bind("<Return>", self.send_message) 
+        self.message_entry.bind("<Return>", self.send_message)
 
-        # --- 4. Botón de Enviar ---
-        self.send_button = tk.Button(root, text="Enviar", command=self.send_message, bg="#FF9800", fg="#FFFFFF", font=("Arial", 12, "bold"))
-        self.send_button.pack(pady=10) 
+        # --- Botones ---
+        btn_frame = tk.Frame(root, bg="#E0F7FA")
+        btn_frame.pack(pady=8)
 
-        # --- 5. Estado inicial ---
+        self.send_button = tk.Button(btn_frame, text="Enviar", command=self.send_message, bg="#FF9800", fg="#FFFFFF", font=("Arial", 12, "bold"))
+        self.send_button.grid(row=0, column=0, padx=6)
+
+        self.history_button = tk.Button(btn_frame, text="Ver Historial", command=self.show_history, bg="#0288D1", fg="#FFFFFF", font=("Arial", 12, "bold"))
+        self.history_button.grid(row=0, column=1, padx=6)
+
         self.message_entry.config(state='disabled')
         self.send_button.config(state='disabled')
-        
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def connect(self):
@@ -65,45 +70,47 @@ class ChatGUI:
             self.message_entry.delete(0, tk.END)
 
     def handle_server_message(self, message):
-        """Procesa el mensaje recibido del servidor y lo programa para mostrarse."""
-        
         if message.startswith("Sistema:"):
-            # Mensajes del sistema
-            content = message.replace("Sistema: ", "").strip()
+            content = message.replace("Sistema:", "").strip()
             self.root.after(0, self.display_message, "Sistema", content, "#00796B")
-            
         elif ":" in message:
             try:
-                # Separar emisor y contenido
                 sender, content = message.split(":", 1)
                 sender = sender.strip()
                 content = content.strip()
-                
-                # Color diferente para el usuario local vs. otros usuarios
                 current_nickname = self.nickname_entry.get().strip()
+                color = "#1976D2" if sender == current_nickname else "#FF9800"
                 if sender == current_nickname:
-                    color = "#1976D2" # Azul para mensajes propios
                     sender = "Tú"
-                else:
-                    color = "#FF9800" # Naranja para otros usuarios
-                
                 self.root.after(0, self.display_message, sender, content, color)
             except ValueError:
                 self.root.after(0, self.display_message, "Error", message, "red")
         else:
-            # Mensaje simple sin formato de emisor
             self.root.after(0, self.display_message, "Sistema", message, "#00796B")
 
-    def display_message(self, sender, message, color):
-        """Inserta el mensaje en el área de texto de la GUI (se ejecuta en el hilo principal)."""
+    def display_message(self, sender, message, color="#000000"):
         self.messages_area.config(state='normal')
         self.messages_area.insert(tk.END, f"{sender}: {message}\n", (color,))
         self.messages_area.tag_config(color, foreground=color)
         self.messages_area.config(state='disabled')
-        self.messages_area.see(tk.END) 
+        self.messages_area.see(tk.END)
+
+    def show_history(self):
+        history = self.client.get_history()
+        if not history:
+            self.display_message("Sistema", "No hay historial o no fue posible obtenerlo.", "#00796B")
+            return
+
+        self.display_message("Sistema", "--- Historial del Chat ---", "#00796B")
+        for msg in history:   # ← ESTE FOR DEBE ESTAR DENTRO DE LA FUNCIÓN
+            sender = msg.get("nombre_usuario", "Desconocido")
+            text = msg.get("mensaje", "")
+            fecha = msg.get("fecha_hora", "")
+
+            self.display_message(f"{sender} ({fecha})", text, "#6A1B9A")
+
 
     def on_closing(self):
-        """Maneja la desconexión del cliente al cerrar la ventana."""
         if self.client.connected:
             self.client.disconnect()
         self.root.destroy()

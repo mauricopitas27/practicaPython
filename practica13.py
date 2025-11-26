@@ -1,65 +1,68 @@
-# practiga13.py (Sin cambios funcionales, ya que tiene el callback correcto)
+# practica13.py
 import socket
 import threading
+import requests
+
+API_GET_URL = "http://127.0.0.1:8000/api/mensajes"
 
 class ChatClient:
-    def __init__(self, host='localhost', port=12345):
-        self.host = host
-        self.port = port
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def __init__(self):
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connected = False
-        self.receive_thread = None
-        self.gui_callback = None  # Almacena la función de la GUI
+        self.gui_callback = None
 
-    def set_gui_callback(self, callback_function):
-        """Establece la función de la GUI a la que se llamará al recibir un mensaje."""
-        self.gui_callback = callback_function
+    def set_gui_callback(self, callback):
+        """callback(msg: str) -> None  -> GUI debe proporcionar esta función."""
+        self.gui_callback = callback
 
-    def connect(self, nickname):
-        """Conecta al servidor y envía el nickname."""
+    def connect(self, nickname, host="127.0.0.1", port=12345):
         try:
-            self.client.connect((self.host, self.port))
-            self.client.send(nickname.encode('utf-8'))
+            self.client_socket.connect((host, port))
+            # enviar nickname al conectarse (el servidor lo espera)
+            self.client_socket.send(nickname.encode('utf-8'))
             self.connected = True
-            # Iniciar hilo para recibir mensajes
-            self.receive_thread = threading.Thread(target=self.receive_messages)
-            self.receive_thread.daemon = True 
-            self.receive_thread.start()
+            threading.Thread(target=self.receive_messages, daemon=True).start()
             return True
         except Exception as e:
-            print(f"Error al conectar: {e}")
+            print("No se pudo conectar:", e)
             return False
 
-    def send_message(self, message):
-        """Envía un mensaje (SOLO EL CONTENIDO) al servidor."""
-        if self.connected:
-            try:
-                # Se envía solo el texto, el servidor se encarga de reestructurarlo.
-                self.client.send(message.encode('utf-8')) 
-            except:
-                self.disconnect()
-
     def receive_messages(self):
-        """Recibe mensajes del servidor en un hilo."""
         while self.connected:
             try:
-                message = self.client.recv(1024).decode('utf-8')
-                if message:
-                    if self.gui_callback:
-                        self.gui_callback(message) # <-- Llama a la GUI con el mensaje del servidor
-                else:
-                    self.disconnect()
-            except:
-                self.disconnect()
+                msg = self.client_socket.recv(4096).decode('utf-8')
+                if not msg:
+                    self.connected = False
+                    break
+                if self.gui_callback:
+                    self.gui_callback(msg)
+            except Exception:
+                self.connected = False
                 break
 
-    def disconnect(self):
-        """Desconecta del servidor."""
-        if self.connected:
+    def send_message(self, msg):
+        try:
+            self.client_socket.send(msg.encode('utf-8'))
+        except Exception as e:
+            print("Error enviar mensaje:", e)
             self.connected = False
-            try:
-                self.client.close()
-            except:
-                pass
-            if self.gui_callback:
-                self.gui_callback("Sistema: Te has desconectado del servidor.")
+
+    def get_history(self):
+        """Obtiene historial desde Laravel (GET). Devuelve lista de dicts."""
+        try:
+            resp = requests.get(API_GET_URL, timeout=5)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                print("Error GET historial:", resp.status_code, resp.text)
+                return []
+        except Exception as e:
+            print("Error GET historial:", e)
+            return []
+
+    def disconnect(self):
+        try:
+            self.connected = False
+            self.client_socket.close()
+        except:
+            pass
